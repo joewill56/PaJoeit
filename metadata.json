@@ -1,0 +1,6 @@
+{
+  "name": "PAJOEIT CONVERT - Free Online Image Workspace",
+  "description": "Convert, compress and resize images online. Fast, free, private, browser-based image conversion, compression, and resizing with no signup required.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

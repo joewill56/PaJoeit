@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Background subtle dark gradient -->
+    <radialGradient id="bg-glow" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#0e1726" />
+      <stop offset="100%" stop-color="#060911" />
+    </radialGradient>
+    
+    <!-- Top arc and arrow gradient -->
+    <linearGradient id="cyan-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="60%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+
+    <!-- Left stem ribbon fold gradient -->
+    <linearGradient id="ribbon-fold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="40%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+
+    <!-- Under-curl gradient -->
+    <linearGradient id="under-curl" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+
+    <!-- Shadow filter -->
+    <filter id="p-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#0284c7" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- App Rounded Squircle Background -->
+  <rect width="512" height="512" rx="120" fill="url(#bg-glow)" />
+  <rect x="8" y="8" width="496" height="496" rx="112" stroke="rgba(255,255,255,0.07)" stroke-width="2" />
+
+  <!-- The 3D Gradient P Glyphs with embedded forward arrow -->
+  <g filter="url(#p-shadow)">
+    <!-- Main P outer curve -->
+    <path d="M180 120 C 180 120, 290 110, 360 170 C 420 220, 410 320, 340 360 C 270 400, 220 370, 220 370 L 220 400 C 220 400, 180 410, 180 380 Z" fill="url(#cyan-blue)" opacity="0.95"/>
+    
+    <!-- Left vertical folding ribbon -->
+    <path d="M180 140 C 180 130, 200 120, 220 120 L 220 380 C 190 380, 180 340, 180 290 Z" fill="url(#ribbon-fold)" />
+
+    <!-- Smooth lower ribbon loop folding into P -->
+    <path d="M180 310 C 180 390, 220 410, 220 410 C 220 410, 250 370, 250 320 C 250 270, 210 240, 180 310 Z" fill="url(#under-curl)" opacity="0.9"/>
+
+    <!-- Sharp counter-aperture cutout for P -->
+    <rect x="220" y="160" width="100" height="150" rx="30" fill="#060911" />
+
+    <!-- Embedded vibrant cyan/blue forward CONVERT arrow -->
+    <g transform="translate(230, 205)">
+      <path d="M0 25 H 45 V 10 L 75 35 L 45 60 V 45 H 0 Z" fill="#38bdf8" />
+    </g>
+  </g>
+</svg>
