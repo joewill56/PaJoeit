@@ -63,16 +63,28 @@ export async function downloadAllAsZip(
     }
   }
 
-  const content = await zip.generateAsync({ type: 'blob' }, (metadata) => {
-    onProgress?.(Math.round(metadata.percent));
-  });
+  try {
+    const content = await zip.generateAsync(
+      {
+        type: 'blob',
+        compression: 'STORE', // Images are already compressed; STORE avoids wasteful duplicate recompression and RAM spikes
+      },
+      (metadata) => {
+        onProgress?.(Math.round(metadata.percent));
+      }
+    );
 
-  const zipUrl = URL.createObjectURL(content);
-  const a = document.createElement('a');
-  a.href = zipUrl;
-  a.download = zipName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(zipUrl);
+    const zipUrl = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = zipUrl;
+    a.download = zipName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(zipUrl), 1000);
+  } catch (err: any) {
+    throw new Error(
+      'Your files were processed successfully, but this ZIP is too large for this device to create reliably. Please download the files individually or create smaller batches.'
+    );
+  }
 }

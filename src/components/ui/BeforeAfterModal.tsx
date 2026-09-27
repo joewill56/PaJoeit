@@ -11,7 +11,20 @@ interface BeforeAfterModalProps {
 export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClose }) => {
   const [sliderPosition, setSliderPosition] = useState(50); // percentage
   const [isDragging, setIsDragging] = useState(false);
+  const [modalOriginalUrl, setModalOriginalUrl] = useState<string>('');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Allocate high-res comparison preview only while modal is open, and release immediately on close
+  useEffect(() => {
+    if (item?.file) {
+      const url = URL.createObjectURL(item.file);
+      setModalOriginalUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+        setModalOriginalUrl('');
+      };
+    }
+  }, [item?.file]);
 
   const handleMove = useCallback((clientX: number) => {
     if (!containerRef.current) return;
@@ -113,7 +126,7 @@ export const BeforeAfterModal: React.FC<BeforeAfterModalProps> = ({ item, onClos
           >
             {/* Background image: Original (Left) */}
             <img
-              src={item.previewUrl}
+              src={modalOriginalUrl || item.previewUrl}
               alt="Original"
               className="max-h-[65vh] w-auto object-contain block pointer-events-none"
             />

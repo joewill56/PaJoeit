@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Eye,
   Download,
+  Clock,
 } from 'lucide-react';
 import { ProcessedImageItem } from '../../types/image';
 import { formatBytes, formatDimensions, getMimeShortName } from '../../lib/image-engine/file-utils';
@@ -21,6 +22,7 @@ interface FileCardProps {
 export const FileCard: React.FC<FileCardProps> = ({ item, onRemove, onOpenCompare }) => {
   const isComplete = item.status === 'success';
   const isProcessing = item.status === 'processing';
+  const isQueued = item.status === 'queued';
   const isError = item.status === 'error';
 
   return (
@@ -74,12 +76,24 @@ export const FileCard: React.FC<FileCardProps> = ({ item, onRemove, onOpenCompar
                 <Loader2 className="w-3 h-3 animate-spin" /> Processing
               </span>
             )}
+            {isQueued && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-500/15 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 font-mono">
+                <Clock className="w-3 h-3" /> Queued
+              </span>
+            )}
             {isError && (
               <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-400 font-mono">
                 <AlertCircle className="w-3 h-3" /> Error
               </span>
             )}
           </div>
+
+          {/* Error Message if failed */}
+          {isError && item.errorMessage && (
+            <p className="mt-1 text-xs text-rose-600 dark:text-rose-400 font-medium leading-relaxed">
+              {item.errorMessage}
+            </p>
+          )}
 
           {/* Size & Dimension Metrics */}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">

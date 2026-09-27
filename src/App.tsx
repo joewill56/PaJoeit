@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   Check,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -26,7 +28,7 @@ import {
   ToolRouteConfig,
 } from './types/image';
 import { TOOLS_CONFIG, GUIDES_DATA } from './lib/seo/routes-data';
-import { getImageDimensions } from './lib/image-engine/file-utils';
+import { getImageDimensions, createThumbnailUrl, isSupportedImageFile } from './lib/image-engine/file-utils';
 import {
   LanguageCode,
   parsePath,
@@ -44,6 +46,7 @@ export default function App() {
   });
 
   const [items, setItems] = useState<ProcessedImageItem[]>([]);
+  const [batchLimitWarning, setBatchLimitWarning] = useState<string | null>(null);
   const [globalSettings, setGlobalSettings] = useState<ImageProcessingSettings>({
     outputFormat: 'original',
     quality: 0.75,
@@ -217,21 +220,37 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Add files to workspace
+  // Add files to workspace with strict 50 items cap
   const handleAddFiles = useCallback(
     async (files: File[]) => {
+      const currentCount = items.length;
+      if (currentCount >= 50) {
+        setBatchLimitWarning(tr.limitExceededNotice(50, 0));
+        return;
+      }
+
+      let filesToAdd = files;
+      if (currentCount + files.length > 50) {
+        const allowed = 50 - currentCount;
+        filesToAdd = files.slice(0, allowed);
+        setBatchLimitWarning(tr.limitExceededNotice(currentCount, allowed));
+      } else {
+        setBatchLimitWarning(null);
+      }
+
       const newItems: ProcessedImageItem[] = [];
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+      for (let i = 0; i < filesToAdd.length; i++) {
+        const file = filesToAdd[i];
         let dimensions = { width: 0, height: 0 };
         try {
           dimensions = await getImageDimensions(file);
-        } catch (e) {
+        } catch {
           dimensions = { width: 1920, height: 1080 };
         }
 
-        const previewUrl = URL.createObjectURL(file);
+        const previewUrl = createThumbnailUrl(file, 240);
+
         newItems.push({
           id: `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
           file,
@@ -248,8 +267,33 @@ export default function App() {
 
       setItems((prev) => [...prev, ...newItems]);
     },
-    [globalSettings]
+    [items.length, globalSettings, tr]
   );
+
+  // Global clipboard paste listener (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+        const files: File[] = [];
+        for (let i = 0; i < e.clipboardData.files.length; i++) {
+          const f = e.clipboardData.files[i];
+          if (isSupportedImageFile(f)) {
+            files.push(f);
+          }
+        }
+        if (files.length > 0) {
+          e.preventDefault();
+          handleAddFiles(files);
+        }
+      }
+    };
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [handleAddFiles]);
 
   // Clear all workspace items
   const handleClearAll = useCallback(() => {
@@ -258,6 +302,7 @@ export default function App() {
       if (item.resultUrl) URL.revokeObjectURL(item.resultUrl);
     });
     setItems([]);
+    setBatchLimitWarning(null);
   }, [items]);
 
   // Generate a sample image for instant testing
@@ -296,6 +341,8 @@ export default function App() {
 
     canvas.toBlob(
       (blob) => {
+        canvas.width = 0;
+        canvas.height = 0;
         if (blob) {
           const file = new File([blob], 'sample-mountain-landscape.jpg', {
             type: 'image/jpeg',
@@ -382,6 +429,21 @@ export default function App() {
 
               {/* Tool-specific interactive workspace */}
               <section className="relative mx-auto max-w-5xl">
+                {batchLimitWarning && items.length === 0 && (
+                  <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 p-4 text-amber-900 dark:text-amber-200 backdrop-blur-md shadow-md animate-in fade-in">
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <p className="text-sm font-semibold">{batchLimitWarning}</p>
+                    </div>
+                    <button
+                      onClick={() => setBatchLimitWarning(null)}
+                      className="rounded-lg p-1.5 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition"
+                      aria-label="Dismiss warning"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 {items.length === 0 ? (
                   <div className="space-y-4">
                     <Dropzone
@@ -417,6 +479,8 @@ export default function App() {
                     onAddFiles={handleAddFiles}
                     onClearAll={handleClearAll}
                     lang={lang}
+                    batchLimitWarning={batchLimitWarning}
+                    onDismissLimitWarning={() => setBatchLimitWarning(null)}
                   />
                 )}
               </section>
@@ -472,6 +536,21 @@ export default function App() {
 
               {/* PRIMARY INTERACTIVE IMAGE WORKSPACE */}
               <section className="relative mx-auto max-w-5xl">
+                {batchLimitWarning && items.length === 0 && (
+                  <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 p-4 text-amber-900 dark:text-amber-200 backdrop-blur-md shadow-md animate-in fade-in">
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <p className="text-sm font-semibold">{batchLimitWarning}</p>
+                    </div>
+                    <button
+                      onClick={() => setBatchLimitWarning(null)}
+                      className="rounded-lg p-1.5 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 transition"
+                      aria-label="Dismiss warning"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 {items.length === 0 ? (
                   <div className="space-y-4">
                     <Dropzone
@@ -500,6 +579,8 @@ export default function App() {
                     onAddFiles={handleAddFiles}
                     onClearAll={handleClearAll}
                     lang={lang}
+                    batchLimitWarning={batchLimitWarning}
+                    onDismissLimitWarning={() => setBatchLimitWarning(null)}
                   />
                 )}
               </section>

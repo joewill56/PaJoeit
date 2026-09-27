@@ -67,27 +67,6 @@ export const Dropzone: React.FC<DropzoneProps> = ({
     }
   };
 
-  // Support clipboard paste (Cmd+V / Ctrl+V)
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      if (e.clipboardData && e.clipboardData.files.length > 0) {
-        const files: File[] = [];
-        for (let i = 0; i < e.clipboardData.files.length; i++) {
-          const f = e.clipboardData.files[i];
-          if (isSupportedImageFile(f)) {
-            files.push(f);
-          }
-        }
-        if (files.length > 0) {
-          onFilesSelected(files);
-        }
-      }
-    };
-
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [onFilesSelected]);
-
   if (compact) {
     return (
       <div
@@ -112,6 +91,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({
         />
         <Plus className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
         <span>{tr.addMoreImages}</span>
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-1">({tr.upTo50Images})</span>
       </div>
     );
   }
@@ -184,6 +164,10 @@ export const Dropzone: React.FC<DropzoneProps> = ({
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500 dark:text-slate-400">
         <span className="font-mono uppercase tracking-wider font-semibold">
           {acceptedFormatsText}
+        </span>
+        <span className="text-slate-300 dark:text-slate-700">•</span>
+        <span className="inline-flex items-center gap-1 font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-full text-[11px] border border-slate-200 dark:border-slate-700/60">
+          {tr.upTo50Images}
         </span>
         <span className="text-slate-300 dark:text-slate-700">•</span>
         <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">

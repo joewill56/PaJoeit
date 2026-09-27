@@ -39,6 +39,14 @@ export type ProcessingStatus =
   | 'success'
   | 'error';
 
+export type ImageErrorCode =
+  | 'DECODE_ERROR'
+  | 'MEMORY_ERROR'
+  | 'UNSUPPORTED_FORMAT'
+  | 'DIMENSION_ERROR'
+  | 'COMPRESSION_ERROR'
+  | 'UNKNOWN_ERROR';
+
 export interface ProcessedImageItem {
   id: string;
   file: File;
@@ -51,6 +59,7 @@ export interface ProcessedImageItem {
   status: ProcessingStatus;
   progress: number;
   errorMessage?: string;
+  errorCode?: ImageErrorCode;
   
   // Results
   resultBlob?: Blob;

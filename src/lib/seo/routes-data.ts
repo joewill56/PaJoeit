@@ -39,7 +39,7 @@ export const TOOLS_CONFIG: Record<string, ToolRouteConfig> = {
     ],
     faqs: [
       { question: 'Do my photos get uploaded to any server?', answer: 'No. PAJOEIT CONVERT processes 100% of your images inside your web browser using HTML5 Canvas and client-side memory. Your pictures never touch our servers or any cloud database.' },
-      { question: 'Is there a limit on how many images I can process?', answer: 'No artificial batch limits exist. You can convert dozens of images at once and download them conveniently bundled in a single ZIP file.' },
+      { question: 'Is there a limit on how many images I can process?', answer: 'You can process up to 50 images in a single batch directly in browser memory and download them conveniently bundled in a single ZIP file.' },
       { question: 'Can I compress an image down to an exact size like 100KB?', answer: 'Yes! Our Target Size Engine intelligently adapts compression quality and step-down resolution to match your requested file size as closely as possible.' },
     ],
     relatedTools: ['webp-to-png', 'webp-to-jpg', 'compress-jpg-to-100kb', 'image-compressor'],

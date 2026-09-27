@@ -34,6 +34,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     key: K,
     val: ImageProcessingSettings[K]
   ) => {
+    setActivePreset('custom');
     onChange({ ...settings, [key]: val });
   };
 
@@ -202,8 +203,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 key={p.id}
                 type="button"
                 onClick={() => {
-                  updateSetting('compressionPreset', p.id as CompressionPreset);
-                  updateSetting('quality', p.val);
+                  setActivePreset('custom');
+                  onChange({
+                    ...settings,
+                    compressionPreset: p.id as CompressionPreset,
+                    quality: p.val,
+                  });
                 }}
                 className={`rounded-xl border py-1.5 text-center text-xs font-medium transition ${
                   settings.compressionPreset === p.id
@@ -223,10 +228,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               min="0.10"
               max="1.0"
               step="0.01"
-              value={settings.quality}
+              value={settings.quality ?? 0.75}
               onChange={(e) => {
-                updateSetting('quality', parseFloat(e.target.value));
-                updateSetting('compressionPreset', 'custom');
+                const parsed = parseFloat(e.target.value);
+                const newQuality = isNaN(parsed) ? 0.75 : Math.round(parsed * 100) / 100;
+                setActivePreset('custom');
+                onChange({
+                  ...settings,
+                  quality: newQuality,
+                  compressionPreset: 'custom',
+                });
               }}
               className="w-full accent-cyan-500 cursor-pointer"
             />
@@ -315,7 +326,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </label>
             <button
               type="button"
-              onClick={() => updateSetting('targetSizeEnabled', !settings.targetSizeEnabled)}
+              onClick={() => {
+                setActivePreset('custom');
+                onChange({
+                  ...settings,
+                  targetSizeEnabled: !settings.targetSizeEnabled,
+                  targetSizeKB: settings.targetSizeKB || 100,
+                });
+              }}
               className={`rounded-full px-2 py-0.5 text-[10px] font-mono font-bold transition ${
                 settings.targetSizeEnabled
                   ? 'bg-amber-500 text-slate-950'
@@ -332,7 +350,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <button
                   key={kb}
                   type="button"
-                  onClick={() => updateSetting('targetSizeKB', kb)}
+                  onClick={() => {
+                    setActivePreset('custom');
+                    onChange({
+                      ...settings,
+                      targetSizeEnabled: true,
+                      targetSizeKB: kb,
+                    });
+                  }}
                   className={`flex-1 rounded-xl border py-1.5 text-center text-xs font-mono font-semibold transition ${
                     settings.targetSizeKB === kb
                       ? 'border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400'
