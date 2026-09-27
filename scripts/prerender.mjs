@@ -206,12 +206,7 @@ async function prerender() {
     }
   }
 
-  // Cloudflare Pages SPA redirects fallback
-  const redirectsPath = path.join(DIST_DIR, '_redirects');
-  fs.writeFileSync(redirectsPath, '/* /index.html 200\n', 'utf-8');
-
   console.log(`✓ Prerendered ${count} SEO pages successfully for ${BASE_URL}`);
-  console.log('✓ Generated dist/_redirects for Cloudflare Pages SPA routing');
 }
 
 prerender();
