@@ -51,7 +51,7 @@ export async function optimizeToTargetSize(
       maxInitialDim = 1920;
     }
 
-    if ((currentWidth > maxInitialDim || currentHeight > maxInitialDim)) {
+    if (currentWidth > maxInitialDim || currentHeight > maxInitialDim) {
       onProgress?.('Initial sizing for target limit...');
       const preScale = maxInitialDim / Math.max(currentWidth, currentHeight);
       const preW = Math.max(320, Math.round(currentWidth * preScale));
@@ -105,68 +105,72 @@ export async function optimizeToTargetSize(
       // Still above target.
       // PASS 2: Try medium compression (0.50)
       onProgress?.(`Adjusting compression (Pass 2/3: 50% quality)...`);
-      const blob2 = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.50);
-      if (blob2.size <= targetBytes || blob2.size < bestBlob.size) {
-        bestBlob = blob2;
-        bestQuality = 0.50;
-      }
-
-      if (blob2.size > targetBytes) {
-        // PASS 3: Try lower quality (0.30)
-        onProgress?.(`Adjusting compression (Pass 3/3: 30% quality)...`);
-        const blob3 = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.30);
-        if (blob3.size <= targetBytes || blob3.size < bestBlob.size) {
-          bestBlob = blob3;
-          bestQuality = 0.30;
+      try {
+        const blob2 = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.50);
+        if (blob2.size <= targetBytes || blob2.size < bestBlob.size) {
+          bestBlob = blob2;
+          bestQuality = 0.50;
         }
 
-        // PASS 4: If STILL over target size at quality 0.30, the pixel dimensions are too large.
-        // Perform targeted dimension reduction preserving aspect ratio.
-        if (bestBlob.size > targetBytes && currentWidth > 360 && currentHeight > 270) {
-          onProgress?.(`Adjusting dimensions for target size...`);
+        if (blob2.size > targetBytes) {
+          // PASS 3: Try lower quality (0.30)
+          onProgress?.(`Adjusting compression (Pass 3/3: 30% quality)...`);
+          const blob3 = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.30);
+          if (blob3.size <= targetBytes || blob3.size < bestBlob.size) {
+            bestBlob = blob3;
+            bestQuality = 0.30;
+          }
 
-          // Estimate needed scale factor based on area ratio
-          const scale = Math.max(0.35, Math.min(0.85, Math.sqrt(targetBytes / bestBlob.size) * 0.95));
-          const newW = Math.max(320, Math.round(currentWidth * scale));
-          const newH = Math.max(240, Math.round(currentHeight * scale));
+          // PASS 4: If STILL over target size at quality 0.30, the pixel dimensions are too large.
+          // Perform targeted dimension reduction preserving aspect ratio.
+          if (bestBlob.size > targetBytes && currentWidth > 360 && currentHeight > 270) {
+            onProgress?.(`Adjusting dimensions for target size...`);
 
-          const scaledCanvas = document.createElement('canvas');
-          scaledCanvas.width = newW;
-          scaledCanvas.height = newH;
-          const sCtx = scaledCanvas.getContext('2d');
-          if (sCtx) {
-            if (effectiveMime === 'image/jpeg') {
-              sCtx.fillStyle = '#ffffff';
-              sCtx.fillRect(0, 0, newW, newH);
-            }
-            sCtx.imageSmoothingEnabled = true;
-            sCtx.imageSmoothingQuality = 'high';
-            sCtx.drawImage(currentCanvas, 0, 0, newW, newH);
+            // Estimate needed scale factor based on area ratio
+            const scale = Math.max(0.35, Math.min(0.85, Math.sqrt(targetBytes / bestBlob.size) * 0.95));
+            const newW = Math.max(320, Math.round(currentWidth * scale));
+            const newH = Math.max(240, Math.round(currentHeight * scale));
 
-            // Clean up previous scratch canvas immediately
-            cleanupScratch();
-            currentCanvas = scaledCanvas;
-            currentWidth = newW;
-            currentHeight = newH;
-            isCurrentCanvasScratch = true;
+            const scaledCanvas = document.createElement('canvas');
+            scaledCanvas.width = newW;
+            scaledCanvas.height = newH;
+            const sCtx = scaledCanvas.getContext('2d');
+            if (sCtx) {
+              if (effectiveMime === 'image/jpeg') {
+                sCtx.fillStyle = '#ffffff';
+                sCtx.fillRect(0, 0, newW, newH);
+              }
+              sCtx.imageSmoothingEnabled = true;
+              sCtx.imageSmoothingQuality = 'high';
+              sCtx.drawImage(currentCanvas, 0, 0, newW, newH);
 
-            // Test with clean quality (0.65) on resized canvas
-            const blobScaled = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.65);
-            if (blobScaled.size <= targetBytes || blobScaled.size < bestBlob.size) {
-              bestBlob = blobScaled;
-              bestQuality = 0.65;
-            }
+              // Clean up previous scratch canvas immediately
+              cleanupScratch();
+              currentCanvas = scaledCanvas;
+              currentWidth = newW;
+              currentHeight = newH;
+              isCurrentCanvasScratch = true;
 
-            // If still slightly over, final step with 0.40
-            if (bestBlob.size > targetBytes) {
-              const blobScaled2 = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.40);
-              if (blobScaled2.size <= targetBytes || blobScaled2.size < bestBlob.size) {
-                bestBlob = blobScaled2;
-                bestQuality = 0.40;
+              // Test with clean quality (0.65) on resized canvas
+              const blobScaled = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.65);
+              if (blobScaled.size <= targetBytes || blobScaled.size < bestBlob.size) {
+                bestBlob = blobScaled;
+                bestQuality = 0.65;
+              }
+
+              // If still slightly over, final step with 0.40
+              if (bestBlob.size > targetBytes) {
+                const blobScaled2 = await canvasToBlobAsync(currentCanvas, effectiveMime, 0.40);
+                if (blobScaled2.size <= targetBytes || blobScaled2.size < bestBlob.size) {
+                  bestBlob = blobScaled2;
+                  bestQuality = 0.40;
+                }
               }
             }
           }
         }
+      } catch {
+        // If an intermediate step fails, retain current bestBlob
       }
     }
 
@@ -182,17 +186,13 @@ export async function optimizeToTargetSize(
       note = `Reached ${resultKB} KB (Target: ${targetKB} KB). Safest practical compression reached.`;
     }
 
-    const finalResult: TargetSizeResult = {
+    return {
       blob: bestBlob,
       dimensions: { width: currentWidth, height: currentHeight },
       quality: bestQuality,
       note,
     };
-
+  } finally {
     cleanupScratch();
-    return finalResult;
-  } catch (error) {
-    cleanupScratch();
-    throw error;
   }
 }

@@ -28,23 +28,12 @@ export interface ProcessImageResult {
   };
 }
 
-/**
- * Fallback loader for Blob to HTMLImageElement
- */
-function loadImageElementFallback(blob: Blob): Promise<{ img: HTMLImageElement; objectUrl: string }> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      resolve({ img, objectUrl: url });
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Image could not be decoded. File may be corrupted or in an unsupported format.'));
-    };
-    img.src = url;
-  });
+export interface DecodedImageSource {
+  source: ImageBitmap | HTMLImageElement;
+  width: number;
+  height: number;
+  isBitmap: boolean;
+  close: () => void;
 }
 
 /**
@@ -126,43 +115,139 @@ export function calculateTargetDimensions(
 
 /**
  * Decodes the image source efficiently using createImageBitmap when supported,
- * falling back to HTMLImageElement.
+ * with EXIF orientation awareness and guaranteed closure.
+ * Falls back to HTMLImageElement with immediate lifecycle cleanup.
  */
 async function decodeSourceImage(
   blob: Blob,
   targetDims: ImageDimensions,
   originalDims: ImageDimensions
-): Promise<{ source: ImageBitmap | HTMLImageElement; isBitmap: boolean; objectUrl?: string }> {
+): Promise<DecodedImageSource> {
+  // 1. Try modern createImageBitmap
   if (typeof createImageBitmap === 'function') {
-    // If target dimensions are smaller than original, decode and downsample in one step
     const isDownscaling =
       (originalDims.width > 0 && targetDims.width < originalDims.width) ||
       (originalDims.height > 0 && targetDims.height < originalDims.height);
 
+    // Option A: Downscale directly during decode (preserves EXIF orientation)
     if (isDownscaling && targetDims.width > 0 && targetDims.height > 0) {
       try {
         const bitmap = await createImageBitmap(blob, {
           resizeWidth: targetDims.width,
           resizeHeight: targetDims.height,
           resizeQuality: 'high',
+          imageOrientation: 'from-image',
         });
-        return { source: bitmap, isBitmap: true };
+        let closed = false;
+        return {
+          source: bitmap,
+          width: targetDims.width,
+          height: targetDims.height,
+          isBitmap: true,
+          close: () => {
+            if (!closed) {
+              closed = true;
+              try {
+                bitmap.close();
+              } catch {}
+            }
+          },
+        };
       } catch {
-        // Options not supported or failed, try standard decode
+        // Fallback to standard decode
       }
     }
 
+    // Option B: Standard decode with orientation
     try {
-      const bitmap = await createImageBitmap(blob);
-      return { source: bitmap, isBitmap: true };
+      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      let closed = false;
+      return {
+        source: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        isBitmap: true,
+        close: () => {
+          if (!closed) {
+            closed = true;
+            try {
+              bitmap.close();
+            } catch {}
+          }
+        },
+      };
     } catch {
       // Fallback to HTMLImageElement
     }
   }
 
-  // Fallback
-  const { img, objectUrl } = await loadImageElementFallback(blob);
-  return { source: img, isBitmap: false, objectUrl };
+  // 2. Fallback: HTMLImageElement decode with guaranteed cleanup
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+
+  return new Promise((resolve, reject) => {
+    let isSettled = false;
+    let isClosed = false;
+
+    const close = () => {
+      if (!isClosed) {
+        isClosed = true;
+        URL.revokeObjectURL(url);
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+      }
+    };
+
+    img.onload = () => {
+      if (!isSettled) {
+        isSettled = true;
+        resolve({
+          source: img,
+          width: img.naturalWidth || targetDims.width,
+          height: img.naturalHeight || targetDims.height,
+          isBitmap: false,
+          close,
+        });
+      }
+    };
+
+    img.onerror = () => {
+      if (!isSettled) {
+        isSettled = true;
+        close();
+        reject(
+          new ImageProcessingError(
+            'DECODE_ERROR',
+            'Image could not be decoded. The file may be corrupted or in an unsupported format.'
+          )
+        );
+      }
+    };
+
+    img.src = url;
+
+    if (typeof img.decode === 'function') {
+      img
+        .decode()
+        .then(() => {
+          if (!isSettled && (img.naturalWidth > 0 || img.width > 0)) {
+            isSettled = true;
+            resolve({
+              source: img,
+              width: img.naturalWidth || targetDims.width,
+              height: img.naturalHeight || targetDims.height,
+              isBitmap: false,
+              close,
+            });
+          }
+        })
+        .catch(() => {
+          // Handled by onload
+        });
+    }
+  });
 }
 
 /**
@@ -194,14 +279,15 @@ export function canvasToBlobAsync(
             return;
           }
 
-          // If blob is null, the browser rejected encoding due to memory constraints or unsupported format.
+          // If blob is null, the browser rejected encoding due to memory constraints.
           // Attempt automatic graceful recovery if canvas is large:
           if (canvas.width > 1200 || canvas.height > 1200) {
+            let recCanvas: HTMLCanvasElement | null = null;
             try {
               const recScale = 0.75;
               const recW = Math.max(640, Math.round(canvas.width * recScale));
               const recH = Math.max(480, Math.round(canvas.height * recScale));
-              const recCanvas = document.createElement('canvas');
+              recCanvas = document.createElement('canvas');
               recCanvas.width = recW;
               recCanvas.height = recH;
               const recCtx = recCanvas.getContext('2d');
@@ -214,10 +300,11 @@ export function canvasToBlobAsync(
                 recCtx.imageSmoothingQuality = 'medium';
                 recCtx.drawImage(canvas, 0, 0, recW, recH);
 
-                recCanvas.toBlob(
+                const targetRec = recCanvas;
+                targetRec.toBlob(
                   (recBlob) => {
-                    recCanvas.width = 0;
-                    recCanvas.height = 0;
+                    targetRec.width = 0;
+                    targetRec.height = 0;
                     if (recBlob) {
                       resolve(recBlob);
                     } else {
@@ -236,7 +323,10 @@ export function canvasToBlobAsync(
                 return;
               }
             } catch {
-              // Proceed to reject below
+              if (recCanvas) {
+                recCanvas.width = 0;
+                recCanvas.height = 0;
+              }
             }
           }
 
@@ -285,6 +375,10 @@ export function canvasToBlobAsync(
 
 /**
  * Executes the unified, memory-efficient image processing pipeline.
+ * Guarantees zero residual allocations:
+ * - Temporary ImageBitmaps are explicitly closed
+ * - Temporary object URLs are revoked
+ * - Temporary canvas buffers are explicitly reset to 0x0
  */
 export async function processSingleImage(
   item: ProcessedImageItem,
@@ -309,7 +403,11 @@ export async function processSingleImage(
   const origW = item.originalDimensions.width;
   const origH = item.originalDimensions.height;
 
-  if (origW > limits.maxDimensionAllowed || origH > limits.maxDimensionAllowed || (origW * origH) > limits.maxAreaAllowed) {
+  if (
+    (origW > 0 && origW > limits.maxDimensionAllowed) ||
+    (origH > 0 && origH > limits.maxDimensionAllowed) ||
+    (origW > 0 && origH > 0 && origW * origH > limits.maxAreaAllowed)
+  ) {
     throw new ImageProcessingError(
       'DIMENSION_ERROR',
       'This image is too large for this device to process safely. Try a smaller image or resize it first.'
@@ -321,7 +419,7 @@ export async function processSingleImage(
 
   // 3. Decode Image using createImageBitmap or fallback
   onProgress?.(30, 'Decoding image...');
-  let decoded: { source: ImageBitmap | HTMLImageElement; isBitmap: boolean; objectUrl?: string };
+  let decoded: DecodedImageSource;
   try {
     decoded = await decodeSourceImage(file, targetDims, item.originalDimensions);
   } catch (err: any) {
@@ -331,7 +429,8 @@ export async function processSingleImage(
       msg.includes('quota') ||
       msg.includes('allocation') ||
       msg.includes('arraybuffer') ||
-      msg.includes('heap')
+      msg.includes('heap') ||
+      msg.includes('out of memory')
     ) {
       throw new ImageProcessingError(
         'MEMORY_ERROR',
@@ -339,70 +438,60 @@ export async function processSingleImage(
         true
       );
     }
+    if (err instanceof ImageProcessingError) {
+      throw err;
+    }
     throw new ImageProcessingError(
       'DECODE_ERROR',
       'Image could not be decoded. The file may be corrupted or in an unsupported format.'
     );
   }
 
-  onProgress?.(50, 'Initializing canvas buffer...');
-  const canvas = document.createElement('canvas');
-  canvas.width = targetDims.width;
-  canvas.height = targetDims.height;
-
-  const ctx = canvas.getContext('2d', { willReadFrequently: false });
-  if (!ctx) {
-    if (decoded.isBitmap) (decoded.source as ImageBitmap).close();
-    if (decoded.objectUrl) URL.revokeObjectURL(decoded.objectUrl);
-    canvas.width = 0;
-    canvas.height = 0;
-    throw new ImageProcessingError(
-      'MEMORY_ERROR',
-      'This image is too large for this device to process safely.',
-      true
-    );
-  }
-
-  // 4. Output MIME determination
-  let outputMime = item.settings.outputFormat;
-  if (outputMime === 'original') {
-    outputMime = (item.originalFormat || 'image/jpeg') as any;
-  }
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(outputMime)) {
-    outputMime = 'image/jpeg';
-  }
-
-  // 5. Alpha background handling for JPEG:
-  // When converting transparent PNG/WebP to JPEG, fill canvas with clean opaque white
-  if (outputMime === 'image/jpeg') {
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, targetDims.width, targetDims.height);
-  }
-
-  // 6. Draw image onto canvas
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(decoded.source, 0, 0, targetDims.width, targetDims.height);
-
-  // 7. CRITICAL: Release decoded bitmap/image immediately after drawing
-  if (decoded.isBitmap) {
-    (decoded.source as ImageBitmap).close();
-  } else {
-    if (decoded.objectUrl) {
-      URL.revokeObjectURL(decoded.objectUrl);
-    }
-    const htmlImg = decoded.source as HTMLImageElement;
-    htmlImg.src = '';
-    htmlImg.onload = null;
-    htmlImg.onerror = null;
-  }
-
-  // 8. Compression / Target Size
-  let finalBlob: Blob;
-  let finalDims = targetDims;
-  let targetAchievedInfo: ProcessImageResult['targetAchieved'] = undefined;
-
+  let canvas: HTMLCanvasElement | null = null;
   try {
+    onProgress?.(50, 'Initializing canvas buffer...');
+    canvas = document.createElement('canvas');
+    canvas.width = targetDims.width;
+    canvas.height = targetDims.height;
+
+    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+    if (!ctx) {
+      throw new ImageProcessingError(
+        'MEMORY_ERROR',
+        'This image is too large for this device to process safely.',
+        true
+      );
+    }
+
+    // 4. Output MIME determination
+    let outputMime = item.settings.outputFormat;
+    if (outputMime === 'original') {
+      outputMime = (item.originalFormat || 'image/jpeg') as any;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(outputMime)) {
+      outputMime = 'image/jpeg';
+    }
+
+    // 5. Alpha background handling for JPEG:
+    // When converting transparent PNG/WebP to JPEG, fill canvas with clean opaque white
+    if (outputMime === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, targetDims.width, targetDims.height);
+    }
+
+    // 6. Draw image onto canvas
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(decoded.source, 0, 0, targetDims.width, targetDims.height);
+
+    // 7. CRITICAL: Immediately close decoded source once drawn on canvas!
+    decoded.close();
+
+    // 8. Compression / Target Size
+    let finalBlob: Blob;
+    let finalDims = targetDims;
+    let targetAchievedInfo: ProcessImageResult['targetAchieved'] = undefined;
+
     if (item.settings.targetSizeEnabled && item.settings.targetSizeKB && item.settings.targetSizeKB > 0) {
       onProgress?.(70, `Targeting ${item.settings.targetSizeKB} KB...`);
       const targetResult = await optimizeToTargetSize(
@@ -430,7 +519,6 @@ export async function processSingleImage(
       } else if (item.settings.compressionPreset === 'max') {
         quality = 0.50;
       } else {
-        // 'custom' or any custom quality slider value
         quality = Math.max(0.10, Math.min(1.0, quality));
       }
 
@@ -440,25 +528,28 @@ export async function processSingleImage(
         finalBlob = await canvasToBlobAsync(canvas, outputMime, quality);
       }
     }
+
+    onProgress?.(95, 'Finalizing result...');
+    const resultUrl = URL.createObjectURL(finalBlob);
+    const originalSize = item.originalSize || file.size;
+    const savedBytes = originalSize - finalBlob.size;
+    const savedPercent = Math.max(0, Math.round((savedBytes / originalSize) * 100));
+
+    return {
+      blob: finalBlob,
+      url: resultUrl,
+      size: finalBlob.size,
+      dimensions: finalDims,
+      format: getExtensionFromMime(outputMime).toUpperCase(),
+      savedPercent,
+      targetAchieved: targetAchievedInfo,
+    };
   } finally {
-    // 9. CRITICAL: Release canvas GPU and backing buffer immediately
-    canvas.width = 0;
-    canvas.height = 0;
+    // 9. GUARANTEED CLEANUP: Close decoded source and reset canvas buffer
+    decoded.close();
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
   }
-
-  onProgress?.(95, 'Finalizing result...');
-  const resultUrl = URL.createObjectURL(finalBlob);
-  const originalSize = item.originalSize || file.size;
-  const savedBytes = originalSize - finalBlob.size;
-  const savedPercent = Math.max(0, Math.round((savedBytes / originalSize) * 100));
-
-  return {
-    blob: finalBlob,
-    url: resultUrl,
-    size: finalBlob.size,
-    dimensions: finalDims,
-    format: getExtensionFromMime(outputMime).toUpperCase(),
-    savedPercent,
-    targetAchieved: targetAchievedInfo,
-  };
 }

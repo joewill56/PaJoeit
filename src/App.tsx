@@ -28,7 +28,12 @@ import {
   ToolRouteConfig,
 } from './types/image';
 import { TOOLS_CONFIG, GUIDES_DATA } from './lib/seo/routes-data';
-import { getImageDimensions, createThumbnailUrl, isSupportedImageFile } from './lib/image-engine/file-utils';
+import {
+  getImageDimensions,
+  generateThumbnailUrl,
+  createFallbackThumbnailSvg,
+  isSupportedImageFile,
+} from './lib/image-engine/file-utils';
 import {
   LanguageCode,
   parsePath,
@@ -240,6 +245,8 @@ export default function App() {
 
       const newItems: ProcessedImageItem[] = [];
 
+      // Strictly serialized thumbnail and dimension extraction
+      // Process one image at a time, release resources, yield to browser
       for (let i = 0; i < filesToAdd.length; i++) {
         const file = filesToAdd[i];
         let dimensions = { width: 0, height: 0 };
@@ -249,7 +256,12 @@ export default function App() {
           dimensions = { width: 1920, height: 1080 };
         }
 
-        const previewUrl = createThumbnailUrl(file, 240);
+        let previewUrl = '';
+        try {
+          previewUrl = await generateThumbnailUrl(file, 160);
+        } catch {
+          previewUrl = createFallbackThumbnailSvg(file.name);
+        }
 
         newItems.push({
           id: `${file.name}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -263,6 +275,13 @@ export default function App() {
           status: 'idle',
           progress: 0,
         });
+
+        // Yield between thumbnails to allow browser to reclaim resources
+        if (typeof (window as any).requestIdleCallback === 'function') {
+          await new Promise((r) => (window as any).requestIdleCallback(r, { timeout: 30 }));
+        } else {
+          await new Promise((r) => setTimeout(r, 10));
+        }
       }
 
       setItems((prev) => [...prev, ...newItems]);
@@ -295,11 +314,15 @@ export default function App() {
     return () => window.removeEventListener('paste', handleGlobalPaste);
   }, [handleAddFiles]);
 
-  // Clear all workspace items
+  // Clear all workspace items with full object URL revocation
   const handleClearAll = useCallback(() => {
     items.forEach((item) => {
-      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
-      if (item.resultUrl) URL.revokeObjectURL(item.resultUrl);
+      if (item.previewUrl && item.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(item.previewUrl);
+      }
+      if (item.resultUrl && item.resultUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(item.resultUrl);
+      }
     });
     setItems([]);
     setBatchLimitWarning(null);

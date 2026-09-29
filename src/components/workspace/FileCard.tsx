@@ -50,9 +50,10 @@ export const FileCard: React.FC<FileCardProps> = ({ item, onRemove, onOpenCompar
           }}
         >
           <img
-            src={item.resultUrl || item.previewUrl}
+            src={item.previewUrl}
             alt={item.name}
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            loading="lazy"
           />
           {/* Format badge overlay */}
           <span className="absolute bottom-1 right-1 rounded bg-black/75 px-1 text-[9px] font-mono font-bold uppercase text-white backdrop-blur-xs">

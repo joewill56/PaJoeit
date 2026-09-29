@@ -70,8 +70,12 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
   const handleRemoveItem = (id: string) => {
     setItems((prev) => {
       const target = prev.find((i) => i.id === id);
-      if (target?.resultUrl) URL.revokeObjectURL(target.resultUrl);
-      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      if (target?.resultUrl && target.resultUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(target.resultUrl);
+      }
+      if (target?.previewUrl && target.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
       return prev.filter((i) => i.id !== id);
     });
   };
@@ -127,7 +131,7 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
       setCurrentProcessingFile(target.name);
 
       // If item was already processed, revoke old result URL to release memory
-      if (target.resultUrl) {
+      if (target.resultUrl && target.resultUrl.startsWith('blob:')) {
         URL.revokeObjectURL(target.resultUrl);
       }
 
@@ -205,12 +209,11 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
         }
       }
 
-      // Requirement 6: Allow browser breathing room for garbage collection
+      // Allow browser GC and GPU texture release between large images (Requirement 10)
       if (typeof (window as any).requestIdleCallback === 'function') {
-        await new Promise((r) => (window as any).requestIdleCallback(r, { timeout: 60 }));
-      } else {
-        await new Promise((r) => setTimeout(r, 35));
+        await new Promise((r) => (window as any).requestIdleCallback(r, { timeout: 80 }));
       }
+      await new Promise((r) => setTimeout(r, 40));
     }
 
     setOverallProgress(100);
@@ -235,8 +238,12 @@ export const FileWorkspace: React.FC<FileWorkspaceProps> = ({
       prev
         .filter((i) => i.status === 'success')
         .forEach((i) => {
-          if (i.previewUrl) URL.revokeObjectURL(i.previewUrl);
-          if (i.resultUrl) URL.revokeObjectURL(i.resultUrl);
+          if (i.previewUrl && i.previewUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(i.previewUrl);
+          }
+          if (i.resultUrl && i.resultUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(i.resultUrl);
+          }
         });
       return prev.filter((i) => i.status !== 'success');
     });
