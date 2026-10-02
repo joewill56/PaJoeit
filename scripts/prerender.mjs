@@ -206,7 +206,58 @@ async function prerender() {
     }
   }
 
+  // Generate authoritative sitemap.xml for all 210 localized pages
+  const sitemapEntries = [];
+  for (const route of routes) {
+    const isRoot = route.subPath === '/';
+    const isTool = Object.keys(TOOLS_CONFIG).some((k) => `/${k}` === route.subPath);
+    const isGuide = Object.keys(GUIDES_DATA).some((k) => `/guides/${k}` === route.subPath);
+
+    const changefreq = isRoot ? 'daily' : isTool ? 'weekly' : 'monthly';
+    const priority = isRoot ? '1.0' : isTool ? '0.9' : isGuide ? '0.8' : '0.7';
+
+    for (const lang of SUPPORTED_LANGUAGES) {
+      const isDefault = lang.code === 'en';
+      const cleanSub = route.subPath === '/' ? '' : route.subPath;
+      const routeLoc = isDefault ? `${BASE_URL}${cleanSub || '/'}` : `${BASE_URL}/${lang.code}${cleanSub}`;
+
+      const altLinks = SUPPORTED_LANGUAGES.map((l) => {
+        const altHref = l.code === 'en' ? `${BASE_URL}${cleanSub || '/'}` : `${BASE_URL}/${l.code}${cleanSub}`;
+        return `    <xhtml:link rel="alternate" hreflang="${l.code}" href="${altHref}" />`;
+      });
+      altLinks.push(`    <xhtml:link rel="alternate" hreflang="x-default" href="${BASE_URL}${cleanSub || '/'}" />`);
+
+      sitemapEntries.push(`  <url>
+    <loc>${routeLoc}</loc>
+    <changefreq>${changefreq}</changefreq>
+    <priority>${priority}</priority>
+${altLinks.join('\n')}
+  </url>`);
+    }
+  }
+
+  const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${sitemapEntries.join('\n')}
+</urlset>
+`;
+
+  // Write authoritative sitemap.xml and robots.txt to both dist and public
+  const publicDir = path.resolve(__dirname, '../public');
+  fs.writeFileSync(path.join(DIST_DIR, 'sitemap.xml'), sitemapXml.trim() + '\n', 'utf-8');
+  fs.writeFileSync(path.join(publicDir, 'sitemap.xml'), sitemapXml.trim() + '\n', 'utf-8');
+
+  const robotsTxt = `User-agent: *
+Allow: /
+
+Sitemap: ${BASE_URL}/sitemap.xml
+`;
+  fs.writeFileSync(path.join(DIST_DIR, 'robots.txt'), robotsTxt, 'utf-8');
+  fs.writeFileSync(path.join(publicDir, 'robots.txt'), robotsTxt, 'utf-8');
+
   console.log(`✓ Prerendered ${count} SEO pages successfully for ${BASE_URL}`);
+  console.log(`✓ Generated authoritative sitemap.xml with ${sitemapEntries.length} URLs`);
+  console.log(`✓ Generated robots.txt`);
 }
 
 prerender();
