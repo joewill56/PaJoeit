@@ -11,7 +11,15 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: [
+          'favicon.ico',
+          'apple-touch-icon.png',
+          'pajoeit-convert-icon.png',
+          'pajoeit-convert-logo.png',
+          'icon.svg',
+          'assets/pajoeit-convert-icon.png',
+          'assets/pajoeit-convert-logo.png',
+        ],
         manifest: {
           id: '/',
           name: 'PAJOEIT CONVERT - Free Online Image Workspace',
@@ -23,6 +31,12 @@ export default defineConfig(() => {
           start_url: '/',
           scope: '/',
           icons: [
+            {
+              src: '/pajoeit-convert-icon.png',
+              sizes: '1024x1024',
+              type: 'image/png',
+              purpose: 'any',
+            },
             {
               src: '/pwa-192x192.png',
               sizes: '192x192',
